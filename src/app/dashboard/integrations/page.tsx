@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plug, Check, X, ExternalLink, RefreshCw, Shield,
   Calendar, Mail, MessageSquare, Video, CreditCard,
   Users, ShoppingCart, Hash, FileText, Layout, Headphones,
-  Eye, EyeOff, AlertCircle, Settings2, ChevronDown, BookOpen,
+  Eye, EyeOff, AlertCircle, Settings2, ChevronDown, ChevronRight, BookOpen,
   Copy, CheckCircle2, Zap, Bot, Globe, Save, ToggleLeft,
   ToggleRight, Plus, Info
 } from "lucide-react";
@@ -358,6 +359,7 @@ interface Connection {
 }
 
 export default function IntegrationsPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -374,7 +376,7 @@ export default function IntegrationsPage() {
   const [copiedStep, setCopiedStep] = useState<number | null>(null);
 
   // ── Email Automation Settings (inline on Gmail card) ──
-  const [showEmailSettings, setShowEmailSettings] = useState(false);
+  
   const [emailSettings, setEmailSettings] = useState({
     auto_reply_enabled: true,
     reply_mode: "replies_and_inquiries",
@@ -736,14 +738,14 @@ export default function IntegrationsPage() {
                 {/* ── Gmail: Email Settings Button ── */}
                 {integration.key === "gmail" && connected && (
                   <button
-                    onClick={() => setShowEmailSettings(!showEmailSettings)}
+                    onClick={() => router.push("/dashboard/email-settings")}
                     className="mt-3 w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium border border-purple-300 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
                   >
                     <span className="flex items-center gap-2">
                       <Zap className="h-3.5 w-3.5" />
                       Email Automation Settings
                     </span>
-                    <ChevronDown className={`h-4 w-4 transition-transform ${showEmailSettings ? "rotate-180" : ""}`} />
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 )}
               </div>

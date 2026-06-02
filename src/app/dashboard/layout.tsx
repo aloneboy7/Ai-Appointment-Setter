@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   Zap, LayoutDashboard, Users, Calendar, MessageSquare, BarChart3,
-  Settings, LogOut, Menu, X, Bot, Plug
+  Settings, LogOut, Menu, X, Bot, Plug, Mail
 } from "lucide-react";
 import { useTheme } from "@/components/ui/ThemeToggle";
 import NotificationDropdown from "@/components/dashboard/NotificationDropdown";
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { icon: Calendar, label: "Calendar", href: "/dashboard/calendar" },
   { icon: MessageSquare, label: "Conversations", href: "/dashboard/conversations" },
   { icon: Plug, label: "Integrations", href: "/dashboard/integrations" },
+  { icon: Mail, label: "Email Settings", href: "/dashboard/email-settings" },
   { icon: Bot, label: "AI Settings", href: "/dashboard/ai-settings" },
   { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
   { icon: Settings, label: "Settings", href: "/dashboard/settings" },
