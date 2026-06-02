@@ -435,7 +435,13 @@ async function processOneEmail(
   // ── Basic skips ──
   if (!fromAddress) return;
   if (fromAddress === creds.email.toLowerCase()) return;
-  if (fromAddress === (creds.replyTo || "").toLowerCase()) return;
+  // Only skip reply-to if it's the SAME as the sender email (not a separate personal address)
+  // Previously this skipped ALL emails from reply-to address, which broke real emails from that address
+  if (creds.replyTo && fromAddress === creds.replyTo.toLowerCase() && fromAddress !== creds.email.toLowerCase()) {
+    // Allow emails from the reply-to address — they're likely from the user's other account
+    // which they use to send test emails or that their contacts might write from.
+    console.log(`[email-automation] Email from reply-to address ${fromAddress} — allowing through`);
+  }
   if (subject.includes("AI Auto-Reply") || subject.includes("AI Assistant")) return;
 
   // Skip auto-generated sender addresses
@@ -445,7 +451,10 @@ async function processOneEmail(
   }
 
   // ── Duplicate check #1: already processed this exact message ──
-  if (messageId && await isAlreadyProcessed(messageId)) return;
+  if (messageId && await isAlreadyProcessed(messageId)) {
+    // Silently skip — no logging needed for already-seen messages
+    return;
+  }
 
   // ── Duplicate check #2: already sent a reply to this sender+subject in last 2 hours ──
   if (await hasAlreadyRepliedTo(creds.userId, fromAddress, subject)) {
@@ -559,7 +568,7 @@ async function processInbox(creds: GmailCreds, result: { emailsProcessed: number
     },
   });
 
-  const MAX_EMAILS_PER_POLL = 10;
+  const MAX_EMAILS_PER_POLL = 200;
 
   const settings = await getUserSettings(creds.userId);
 
@@ -576,37 +585,114 @@ async function processInbox(creds: GmailCreds, result: { emailsProcessed: number
   try {
     await client.connect();
 
-    const lock = await client.getMailboxLock("INBOX");
+    const recentWindow = new Date();
+    recentWindow.setHours(recentWindow.getHours() - 48); // Check last 48 hours
+
+    // ── Phase 1: Search INBOX ──
+    let lock = await client.getMailboxLock("INBOX");
     try {
-      const recentWindow = new Date();
-      recentWindow.setHours(recentWindow.getHours() - 6);
-
       const searchResult = await client.search({ since: recentWindow });
-      const allUids = Array.isArray(searchResult) ? searchResult : [];
-      console.log(`[email-automation] ${creds.email}: ${allUids.length} emails in last 6 hours`);
+      const inboxUids = Array.isArray(searchResult) ? searchResult : [];
+      console.log(`[email-automation] ${creds.email}: ${inboxUids.length} emails in INBOX (last 48h)`);
 
-      if (allUids.length === 0) return;
+      if (inboxUids.length > 0) {
+        const uidsToProcess = inboxUids.slice(-MAX_EMAILS_PER_POLL);
+        console.log(`[email-automation] ${creds.email}: Processing ${uidsToProcess.length} of ${inboxUids.length} INBOX emails`);
 
-      const uidsToProcess = allUids.slice(-MAX_EMAILS_PER_POLL);
-      console.log(`[email-automation] ${creds.email}: Processing ${uidsToProcess.length} most recent`);
+        const messages = client.fetch(
+          { uid: uidsToProcess.join(",") },
+          { source: true, flags: true }
+        );
 
-      const messages = client.fetch(
-        { uid: uidsToProcess.join(",") },
-        { source: true, flags: true }
-      );
-
-      for await (const msg of messages) {
-        if (result.emailsProcessed >= MAX_EMAILS_PER_POLL) break;
-        try {
-          const parsed = await simpleParser(msg.source as Buffer);
-          await processOneEmail(parsed, creds, settings, result);
-        } catch (msgErr) {
-          console.error("[email-automation] Error processing message:", msgErr);
-          result.errors.push(String(msgErr));
+        for await (const msg of messages) {
+          if (result.emailsProcessed >= MAX_EMAILS_PER_POLL) break;
+          try {
+            const parsed = await simpleParser(msg.source as Buffer);
+            await processOneEmail(parsed, creds, settings, result);
+          } catch (msgErr) {
+            console.error("[email-automation] Error processing message:", msgErr);
+            result.errors.push(String(msgErr));
+          }
         }
       }
     } finally {
       lock.release();
+    }
+
+    // ── Phase 2: Search [Gmail]/All Mail for tabbed/filtered emails ──
+    if (result.emailsProcessed < MAX_EMAILS_PER_POLL) {
+      try {
+        lock = await client.getMailboxLock("[Gmail]/All Mail");
+        try {
+          const allMailSearch = await client.search({ since: recentWindow });
+          const allMailUids = Array.isArray(allMailSearch) ? allMailSearch : [];
+          console.log(`[email-automation] ${creds.email}: ${allMailUids.length} emails in All Mail (last 48h)`);
+
+          if (allMailUids.length > 0) {
+            // Process all — isAlreadyProcessed() deduplicates by messageId
+            const uidsToProcess = allMailUids.slice(-MAX_EMAILS_PER_POLL);
+            console.log(`[email-automation] ${creds.email}: Processing ${uidsToProcess.length} All Mail emails`);
+
+            const messages = client.fetch(
+              { uid: uidsToProcess.join(",") },
+              { source: true, flags: true }
+            );
+
+            for await (const msg of messages) {
+              if (result.emailsProcessed >= MAX_EMAILS_PER_POLL) break;
+              try {
+                const parsed = await simpleParser(msg.source as Buffer);
+                await processOneEmail(parsed, creds, settings, result);
+              } catch (msgErr) {
+                console.error("[email-automation] Error processing All Mail message:", msgErr);
+                result.errors.push(String(msgErr));
+              }
+            }
+          }
+        } finally {
+          lock.release();
+        }
+      } catch (e) {
+        console.log(`[email-automation] ${creds.email}: Could not search All Mail: ${String(e)}`);
+      }
+    }
+
+    // ── Phase 3: Check [Gmail]/Spam for misclassified real emails ──
+    if (result.emailsProcessed < MAX_EMAILS_PER_POLL) {
+      try {
+        lock = await client.getMailboxLock("[Gmail]/Spam");
+        try {
+          const spamSearch = await client.search({ since: recentWindow });
+          const spamUids = Array.isArray(spamSearch) ? spamSearch : [];
+          console.log(`[email-automation] ${creds.email}: ${spamUids.length} emails in Spam (last 48h)`);
+          if (spamUids.length > 0) {
+            const uidsToProcess = spamUids.slice(-10);
+            const messages = client.fetch(
+              { uid: uidsToProcess.join(",") },
+              { source: true, flags: true }
+            );
+            for await (const msg of messages) {
+              if (result.emailsProcessed >= MAX_EMAILS_PER_POLL) break;
+              try {
+                const parsed = await simpleParser(msg.source as Buffer);
+                const fromAddr = parsed.from?.value?.[0]?.address?.toLowerCase() || "";
+                console.log(`[email-automation] Spam email from: ${fromAddr} subject: "${(parsed.subject || "").substring(0, 60)}"`);
+                // Only process spam emails from non-auto-generated senders
+                if (!ALWAYS_SKIP_DOMAINS.some(d => fromAddr.startsWith(d + "@"))) {
+                  console.log(`[email-automation] Found legitimate sender in Spam: ${fromAddr} — processing`);
+                  await processOneEmail(parsed, creds, settings, result);
+                }
+              } catch (msgErr) {
+                console.error("[email-automation] Error processing Spam message:", msgErr);
+              }
+            }
+          }
+        } finally {
+          lock.release();
+        }
+      } catch (e) {
+        console.log(`[email-automation] ${creds.email}: Could not search Spam: ${String(e)}`);
+      }
     }
   } finally {
     await client.logout();
