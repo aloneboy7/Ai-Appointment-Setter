@@ -9,7 +9,7 @@ import {
   Users, ShoppingCart, Hash, FileText, Layout, Headphones,
   Eye, EyeOff, AlertCircle, Settings2, ChevronDown, ChevronRight, BookOpen,
   Copy, CheckCircle2, Zap, Bot, Globe, Save, ToggleLeft,
-  ToggleRight, Plus, Info
+  ToggleRight, Plus, Info, Upload, Trash2, Send
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 
@@ -396,6 +396,17 @@ export default function IntegrationsPage() {
   const [newSkipDomain, setNewSkipDomain] = useState("");
   const [newAllowEmail, setNewAllowEmail] = useState("");
   const [expandedSettings, setExpandedSettings] = useState<string | null>(null);
+  const [settingsTab, setSettingsTab] = useState<"settings" | "templates" | "bulk">("settings");
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [editingTemplate, setEditingTemplate] = useState<any | null>(null);
+  const [templateForm, setTemplateForm] = useState({ name: "", subject: "", body: "", category: "general" });
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [uploadResult, setUploadResult] = useState<any>(null);
+  const [uploading, setUploading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
 
   const fetchEmailSettings = useCallback(async () => {
     try {
@@ -438,6 +449,104 @@ export default function IntegrationsPage() {
       setEmailSettingsSaving(false);
     }
   };
+
+  // ── Email Templates ──
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const res = await fetch("/api/email-templates");
+      if (res.ok) {
+        const data = await res.json();
+        setTemplates(data.templates || []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleSaveTemplate = async () => {
+    try {
+      const method = editingTemplate?.id ? "PUT" : "POST";
+      const body = editingTemplate?.id
+        ? { ...templateForm, id: editingTemplate.id }
+        : templateForm;
+      const res = await fetch("/api/email-templates", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setEditingTemplate(null);
+        setTemplateForm({ name: "", subject: "", body: "", category: "general" });
+        fetchTemplates();
+      }
+    } catch { /* ignore */ }
+  };
+
+  const handleDeleteTemplate = async (id: number) => {
+    try {
+      await fetch(`/api/email-templates?id=${id}`, { method: "DELETE" });
+      fetchTemplates();
+    } catch { /* ignore */ }
+  };
+
+  // ── Bulk Campaigns ──
+  const fetchCampaigns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/email-campaigns");
+      if (res.ok) {
+        const data = await res.json();
+        setCampaigns(data.campaigns || []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTemplateId) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("template_id", selectedTemplateId);
+      formData.append("name", `Campaign ${new Date().toLocaleDateString()}`);
+      const res = await fetch("/api/email-campaigns", { method: "POST", body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        setUploadResult(data);
+        fetchCampaigns();
+      } else {
+        setUploadResult({ error: data.error });
+      }
+    } catch (err) {
+      setUploadResult({ error: "Upload failed" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSendCampaign = async (campaignId: number) => {
+    setSending(true);
+    try {
+      const res = await fetch("/api/email-campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send", campaign_id: campaignId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchCampaigns();
+        setUploadResult(null);
+      }
+    } catch { /* ignore */ } finally {
+      setSending(false);
+    }
+  };
+
+  // Load templates & campaigns when Gmail settings open
+  useEffect(() => {
+    if (expandedSettings === "gmail") {
+      fetchTemplates();
+      fetchCampaigns();
+    }
+  }, [expandedSettings, fetchTemplates, fetchCampaigns]);
 
   const copyToClipboard = (text: string, stepIdx: number) => {
     navigator.clipboard.writeText(text.trim()).then(() => {
@@ -799,163 +908,489 @@ export default function IntegrationsPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {expandedSettings === "gmail" && (
-                      <button
-                        onClick={handleSaveEmailSettings}
-                        disabled={emailSettingsSaving}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[#6C63FF] hover:bg-[#5B54E6] text-white transition-colors disabled:opacity-50"
-                      >
-                        {emailSettingsSaving ? <RefreshCw className="h-4 w-4 animate-spin" />
-                          : emailSettingsSaved ? <><CheckCircle2 className="h-4 w-4" /> Saved!</>
-                          : <><Save className="h-4 w-4" /> Save</>}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setExpandedSettings(null)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-white/20 text-gray-300 hover:bg-white/10 transition-colors"
-                    >
-                      <X className="h-4 w-4" /> Cancel
-                    </button>
-                  </div>
+<button
+	                    onClick={() => setExpandedSettings(null)}
+	                    className="p-2 rounded-lg hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+	                  >
+	                    <X className="h-5 w-5" />
+	                  </button>
                 </div>
 
                 {/* Content */}
-                <div className="p-6 space-y-6">
+                <div className="p-6">
                   {expandedSettings === "gmail" ? (
                     <>
-                      {/* Auto-Reply Master Toggle */}
-                      <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 bg-white/5">
-                        <div>
-                          <p className="text-base font-semibold">Auto-Reply</p>
-                          <p className="text-sm text-gray-400">Automatically reply to incoming emails with AI-generated responses</p>
-                        </div>
-                        <button
-                          onClick={() => setEmailSettings(s => ({ ...s, auto_reply_enabled: !s.auto_reply_enabled }))}
-                          className="focus:outline-none"
-                        >
-                          {emailSettings.auto_reply_enabled
-                            ? <ToggleRight className="w-12 h-12 text-green-400" />
-                            : <ToggleLeft className="w-12 h-12 text-gray-500" />}
-                        </button>
+                      {/* Tabs */}
+                      <div className="flex gap-1 mb-6 p-1 bg-white/5 rounded-xl">
+                        {[
+                          { id: "settings", label: "Settings", icon: <Settings2 className="h-4 w-4" /> },
+                          { id: "templates", label: "Templates", icon: <FileText className="h-4 w-4" /> },
+                          { id: "bulk", label: "Bulk Send", icon: <Send className="h-4 w-4" /> },
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            onClick={() => setSettingsTab(tab.id as any)}
+                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                              settingsTab === tab.id
+                                ? "bg-[#6C63FF] text-white shadow-sm"
+                                : "text-gray-400 hover:text-white hover:bg-white/5"
+                            }`}
+                          >
+                            {tab.icon} {tab.label}
+                          </button>
+                        ))}
                       </div>
 
-                      {emailSettings.auto_reply_enabled && (
-                        <>
-                          {/* Reply Mode */}
-                          <section className="p-5 rounded-xl border border-white/10 bg-white/5">
-                            <h3 className="text-base font-semibold mb-1">Reply Mode</h3>
-                            <p className="text-sm text-gray-400 mb-4">Choose which emails the AI should respond to</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                              {[
-                                { value: "replies_and_inquiries", label: "🧠 Smart", desc: "Replies + inquiries" },
-                                { value: "replies_only", label: "↩️ Replies Only", desc: "Direct replies" },
-                                { value: "all", label: "📬 All Emails", desc: "Everything" },
-                                { value: "allowlist_only", label: "✅ Allowlist", desc: "Whitelisted only" },
-                              ].map(mode => (
-                                <button key={mode.value}
-                                  onClick={() => setEmailSettings(s => ({ ...s, reply_mode: mode.value }))}
-                                  className={`p-3 rounded-xl text-left border transition-all ${
-                                    emailSettings.reply_mode === mode.value
-                                      ? "border-[#6C63FF] bg-[#6C63FF]/10 shadow-sm"
-                                      : "border-white/10 hover:border-white/20"
-                                  }`}
+                      {/* ─── Tab: Settings ─── */}
+                      {settingsTab === "settings" && (
+                        <div className="space-y-5">
+                          {/* Auto-Reply Master Toggle */}
+                          <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 bg-white/[0.03]">
+                            <div className="flex-1 mr-4">
+                              <p className="text-sm font-semibold text-white">Auto-Reply</p>
+                              <p className="text-xs text-gray-400 mt-0.5">Automatically reply to incoming emails with AI</p>
+                            </div>
+                            <button
+                              onClick={() => setEmailSettings(s => ({ ...s, auto_reply_enabled: !s.auto_reply_enabled }))}
+                              className="focus:outline-none"
+                            >
+                              {emailSettings.auto_reply_enabled
+                                ? <ToggleRight className="w-12 h-12 text-green-400" />
+                                : <ToggleLeft className="w-12 h-12 text-gray-500" />}
+                            </button>
+                          </div>
+
+                          {emailSettings.auto_reply_enabled && (
+                            <div className="space-y-5">
+                              {/* Reply Mode */}
+                              <div>
+                                <p className="text-sm font-semibold text-white mb-1">Reply Mode</p>
+                                <p className="text-xs text-gray-400 mb-3">Choose which emails the AI should respond to</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                  {[
+                                    { value: "replies_and_inquiries", label: "🧠 Smart", desc: "Replies + inquiries" },
+                                    { value: "replies_only", label: "↩️ Replies Only", desc: "Direct replies" },
+                                    { value: "all", label: "📬 All Emails", desc: "Everything" },
+                                    { value: "allowlist_only", label: "✅ Allowlist", desc: "Whitelisted only" },
+                                  ].map(mode => (
+                                    <button key={mode.value}
+                                      onClick={() => setEmailSettings(s => ({ ...s, reply_mode: mode.value }))}
+                                      className={`p-3 rounded-xl text-left border transition-all ${
+                                        emailSettings.reply_mode === mode.value
+                                          ? "border-[#6C63FF] bg-[#6C63FF]/10"
+                                          : "border-white/10 hover:border-white/20 bg-white/[0.02]"
+                                      }`}
+                                    >
+                                      <span className="text-sm font-medium text-white">{mode.label}</span>
+                                      <p className="text-xs text-gray-400 mt-0.5">{mode.desc}</p>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Category Filters */}
+                              <div>
+                                <p className="text-sm font-semibold text-white mb-1">Skip Categories</p>
+                                <p className="text-xs text-gray-400 mb-3">Green = that category is being skipped</p>
+                                <div className="space-y-2">
+                                  {[
+                                    { key: "skip_marketing", label: "📢 Marketing & Promotions", desc: "Amazon, HubSpot, Mailchimp, promotional offers" },
+                                    { key: "skip_newsletters", label: "📰 Newsletters & Digests", desc: "Weekly digests, blog updates, curated content" },
+                                    { key: "skip_social", label: "👥 Social Notifications", desc: "Facebook, LinkedIn, Twitter, Instagram alerts" },
+                                    { key: "skip_transactional", label: "🧾 Transactional", desc: "Receipts, shipping updates, account alerts" },
+                                    { key: "skip_job_alerts", label: "💼 Job Alerts & Career", desc: "Indeed, Naukri, AngelList, Glassdoor" },
+                                  ].map(cat => (
+                                    <div key={cat.key} className="flex items-center justify-between px-4 py-3 rounded-xl border border-white/5 hover:border-white/10 bg-white/[0.02] transition-colors">
+                                      <div className="flex-1 mr-4">
+                                        <span className="text-sm font-medium text-white">{cat.label}</span>
+                                        <p className="text-xs text-gray-500 mt-0.5">{cat.desc}</p>
+                                      </div>
+                                      <button
+                                        onClick={() => setEmailSettings(s => ({ ...s, [cat.key]: !(s as any)[cat.key] }))}
+                                        className="focus:outline-none"
+                                      >
+                                        {(emailSettings as any)[cat.key]
+                                          ? <ToggleRight className="w-10 h-10 text-green-400" />
+                                          : <ToggleLeft className="w-10 h-10 text-gray-500" />}
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* AI Tone */}
+                              <div>
+                                <p className="text-sm font-semibold text-white mb-1">AI Tone</p>
+                                <p className="text-xs text-gray-400 mb-3">How the AI sounds when replying to emails</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                  {[
+                                    { value: "professional", label: "👔 Professional", desc: "Business-appropriate" },
+                                    { value: "friendly", label: "😊 Friendly", desc: "Warm & approachable" },
+                                    { value: "casual", label: "🤙 Casual", desc: "Conversational" },
+                                    { value: "formal", label: "📜 Formal", desc: "Corporate B2B" },
+                                  ].map(tone => (
+                                    <button key={tone.value}
+                                      onClick={() => setEmailSettings(s => ({ ...s, reply_tone: tone.value }))}
+                                      className={`p-3 rounded-xl text-left border transition-all ${
+                                        emailSettings.reply_tone === tone.value
+                                          ? "border-[#6C63FF] bg-[#6C63FF]/10"
+                                          : "border-white/10 hover:border-white/20 bg-white/[0.02]"
+                                      }`}
+                                    >
+                                      <span className="text-sm font-medium text-white">{tone.label}</span>
+                                      <p className="text-xs text-gray-400 mt-0.5">{tone.desc}</p>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Max Replies */}
+                              <div className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
+                                <div className="flex items-center justify-between mb-3">
+                                  <div>
+                                    <p className="text-sm font-semibold text-white">Max Replies / Day</p>
+                                    <p className="text-xs text-gray-400">Safety limit to prevent over-sending</p>
+                                  </div>
+                                  <span className="text-xl font-bold text-[#6C63FF]">{emailSettings.max_replies_per_day}</span>
+                                </div>
+                                <input type="range" min={5} max={200}
+                                  value={emailSettings.max_replies_per_day}
+                                  onChange={e => setEmailSettings(s => ({ ...s, max_replies_per_day: parseInt(e.target.value) }))}
+                                  className="w-full accent-[#6C63FF] h-2"
+                                />
+                                <div className="flex justify-between text-xs text-gray-500 mt-1"><span>5</span><span>200</span></div>
+                              </div>
+
+                              {/* Custom Instructions — bigger textarea */}
+                              <div>
+                                <p className="text-sm font-semibold text-white mb-1">Custom Instructions</p>
+                                <p className="text-xs text-gray-400 mb-3">Extra guidance for the AI when generating replies</p>
+                                <textarea
+                                  value={emailSettings.custom_instructions || ""}
+                                  onChange={e => setEmailSettings(s => ({ ...s, custom_instructions: e.target.value }))}
+                                  placeholder="e.g. Always mention our 14-day free trial. Focus on small businesses. Keep responses concise."
+                                  rows={6}
+                                  className="w-full px-4 py-3.5 rounded-xl text-sm border border-white/10 bg-[#0f172a] focus:border-[#6C63FF] focus:outline-none resize-none placeholder-gray-600 min-h-[140px]"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ─── Tab: Templates ─── */}
+                      {settingsTab === "templates" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="text-base font-semibold">Email Templates</h3>
+                              <p className="text-sm text-gray-400">Create reusable templates with {"{{variable}}"} placeholders</p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setEditingTemplate({ id: null });
+                                setTemplateForm({ name: "", subject: "", body: "", category: "general" });
+                              }}
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[#6C63FF] hover:bg-[#5B54E6] text-white transition-colors"
+                            >
+                              <Plus className="h-4 w-4" /> New Template
+                            </button>
+                          </div>
+
+                          {/* Template Editor */}
+                          {editingTemplate && (
+                            <div className="p-5 rounded-xl border border-[#6C63FF]/30 bg-[#6C63FF]/5 space-y-4">
+                              <input
+                                type="text"
+                                placeholder="Template name (e.g. Follow-Up)"
+                                value={templateForm.name}
+                                onChange={e => setTemplateForm(f => ({ ...f, name: e.target.value }))}
+                                className="w-full px-4 py-3 rounded-xl text-sm border border-white/10 bg-[#0f172a] focus:border-[#6C63FF] focus:outline-none placeholder-gray-600"
+                              />
+                              <input
+                                type="text"
+                                placeholder='Subject line (e.g. Great to meet you, {{name}}!)'
+                                value={templateForm.subject}
+                                onChange={e => setTemplateForm(f => ({ ...f, subject: e.target.value }))}
+                                className="w-full px-4 py-3 rounded-xl text-sm border border-white/10 bg-[#0f172a] focus:border-[#6C63FF] focus:outline-none placeholder-gray-600"
+                              />
+                              <textarea
+                                placeholder={'Email body — use {{name}}, {{company}}, {{sender_name}}, etc.\n\nHi {{name}},\n\nThanks for your interest...'}
+                                value={templateForm.body}
+                                onChange={e => setTemplateForm(f => ({ ...f, body: e.target.value }))}
+                                rows={8}
+                                className="w-full px-4 py-3 rounded-xl text-sm border border-white/10 bg-[#0f172a] focus:border-[#6C63FF] focus:outline-none resize-none placeholder-gray-600 font-mono min-h-[180px]"
+                              />
+                              <div className="flex items-center gap-3">
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border border-white/10 bg-[#0f172a] text-white hover:border-white/20 transition-colors"
+                                  >
+                                    <span>{templateForm.category === "follow-up" ? "Follow-Up" : templateForm.category === "confirmation" ? "Confirmation" : templateForm.category === "pricing" ? "Pricing" : templateForm.category === "re-engagement" ? "Re-Engagement" : "General"}</span>
+                                    <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${categoryDropdownOpen ? "rotate-180" : ""}`} />
+                                  </button>
+                                  {categoryDropdownOpen && (
+                                    <div className="absolute z-50 mt-1 py-1 w-40 rounded-lg border border-white/10 bg-[#0f172a] shadow-xl">
+                                      {[
+                                        { value: "general", label: "General" },
+                                        { value: "follow-up", label: "Follow-Up" },
+                                        { value: "confirmation", label: "Confirmation" },
+                                        { value: "pricing", label: "Pricing" },
+                                        { value: "re-engagement", label: "Re-Engagement" },
+                                      ].map(opt => (
+                                        <button
+                                          key={opt.value}
+                                          type="button"
+                                          onClick={() => { setTemplateForm(f => ({ ...f, category: opt.value })); setCategoryDropdownOpen(false); }}
+                                          className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
+                                            templateForm.category === opt.value ? "text-[#6C63FF] bg-[#6C63FF]/10" : "text-gray-300"
+                                          }`}
+                                        >
+                                          {opt.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1" />
+                                <button
+                                  onClick={() => { setEditingTemplate(null); setTemplateForm({ name: "", subject: "", body: "", category: "general" }); }}
+                                  className="px-4 py-2 rounded-lg text-sm font-medium border border-white/20 text-gray-300 hover:bg-white/10 transition-colors"
                                 >
-                                  <span className="text-sm font-medium">{mode.label}</span>
-                                  <p className="text-xs text-gray-400 mt-1">{mode.desc}</p>
+                                  Cancel
                                 </button>
-                              ))}
+                                <button
+                                  onClick={handleSaveTemplate}
+                                  disabled={!templateForm.name || !templateForm.subject || !templateForm.body}
+                                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[#6C63FF] hover:bg-[#5B54E6] text-white transition-colors disabled:opacity-40"
+                                >
+                                  <Save className="h-4 w-4" /> Save Template
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Template List */}
+                          {templates.length === 0 && !editingTemplate && (
+                            <div className="text-center py-12 text-gray-500">
+                              <FileText className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                              <p>No templates yet. Create one to get started!</p>
+                            </div>
+                          )}
+                          <div className="space-y-3">
+                            {templates.map((t: any) => (
+                              <div key={t.id} className="p-4 rounded-xl border border-white/10 bg-white/5 hover:border-white/20 transition-colors">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-sm font-semibold">{t.name}</span>
+                                      {t.is_default && (
+                                        <span className="px-2 py-0.5 rounded-full text-xs bg-[#6C63FF]/20 text-[#6C63FF]">Default</span>
+                                      )}
+                                      <span className="px-2 py-0.5 rounded-full text-xs bg-white/10 text-gray-400 capitalize">{t.category}</span>
+                                    </div>
+                                    <p className="text-sm text-gray-300 mb-1">{t.subject}</p>
+                                    <p className="text-xs text-gray-500 line-clamp-2">{t.body}</p>
+                                    {t.variables?.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-2">
+                                        {t.variables.map((v: string) => (
+                                          <span key={v} className="px-2 py-0.5 rounded text-xs bg-[#6C63FF]/10 text-[#6C63FF]/80 font-mono">{`{{${v}}}`}</span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1 ml-3">
+                                    <button
+                                      onClick={() => {
+                                        setEditingTemplate(t);
+                                        setTemplateForm({ name: t.name, subject: t.subject, body: t.body, category: t.category });
+                                      }}
+                                      className="p-2 rounded-lg hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+                                    >
+                                      <Settings2 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteTemplate(t.id)}
+                                      className="p-2 rounded-lg hover:bg-red-500/10 transition-colors text-gray-400 hover:text-red-400"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ─── Tab: Bulk Send ─── */}
+                      {settingsTab === "bulk" && (
+                        <div className="space-y-6">
+                          <div>
+                            <h3 className="text-base font-semibold">Bulk Email Send</h3>
+                            <p className="text-sm text-gray-400">Upload an Excel/CSV file with contacts and send personalized emails</p>
+                          </div>
+
+                          {/* Step 1: Choose Template */}
+                          <section className="p-5 rounded-xl border border-white/10 bg-white/5">
+                            <h4 className="text-sm font-semibold mb-3">Step 1 — Choose a Template</h4>
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setTemplateDropdownOpen(!templateDropdownOpen)}
+                                className="w-full px-4 py-3 rounded-lg text-sm border border-white/10 bg-[#0B1020] text-left flex items-center justify-between hover:border-[#6C63FF]/50 transition-colors"
+                              >
+                                <span className={selectedTemplateId ? "text-white" : "text-gray-500"}>
+                                  {selectedTemplateId
+                                    ? (templates.find((t: any) => String(t.id) === selectedTemplateId)?.name || "Select...")
+                                    : "Select a template..."}
+                                </span>
+                                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${templateDropdownOpen ? "rotate-180" : ""}`} />
+                              </button>
+                              {templateDropdownOpen && (
+                                <div className="absolute z-50 mt-1 w-full rounded-lg border border-white/10 bg-[#131B2E] shadow-xl max-h-60 overflow-y-auto">
+                                  {templates.length === 0 && (
+                                    <div className="px-4 py-3 text-sm text-gray-500">No templates yet. Create one in the Templates tab.</div>
+                                  )}
+                                  {templates.map((t: any) => (
+                                    <button
+                                      key={t.id}
+                                      type="button"
+                                      onClick={() => { setSelectedTemplateId(String(t.id)); setTemplateDropdownOpen(false); }}
+                                      className={`w-full px-4 py-3 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 ${
+                                        String(t.id) === selectedTemplateId ? "bg-[#6C63FF]/10 text-[#6C63FF]" : "text-white"
+                                      }`}
+                                    >
+                                      <div className="text-sm font-medium">{t.name}</div>
+                                      <div className="text-xs text-gray-400 mt-0.5 truncate">{t.subject}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            {selectedTemplateId && (() => {
+                              const t = templates.find((t: any) => String(t.id) === selectedTemplateId);
+                              return t ? (
+                                <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">
+                                  <p className="text-xs text-gray-400 mb-1">Variables in this template:</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {t.variables?.map((v: string) => (
+                                      <span key={v} className="px-2 py-0.5 rounded text-xs bg-[#6C63FF]/10 text-[#6C63FF]/80 font-mono">{`{{${v}}}`}</span>
+                                    ))}
+                                    <span className="text-xs text-gray-500">— make sure your Excel has matching column headers</span>
+                                  </div>
+                                </div>
+                              ) : null;
+                            })()}
+                          </section>
+
+                          {/* Step 2: Upload File */}
+                          <section className="p-5 rounded-xl border border-white/10 bg-white/5">
+                            <h4 className="text-sm font-semibold mb-2 text-gray-300">Step 2 — Upload Contacts (Excel or CSV)</h4>
+                            <p className="text-xs text-gray-500 mb-4">
+                              File must have a column header called <code className="px-1 py-0.5 rounded bg-[#6C63FF]/10 text-[#6C63FF]">email</code>.
+                              Other columns (name, company, phone) become template variables.
+                            </p>
+                            <div
+                              className={`relative flex flex-col items-center justify-center p-8 rounded-xl border-2 border-dashed transition-all ${
+                                selectedTemplateId
+                                  ? "border-white/20 hover:border-[#6C63FF]/50 bg-white/[0.02] hover:bg-white/[0.04] cursor-pointer"
+                                  : "border-white/5 opacity-40 cursor-not-allowed"
+                              }`}
+                              onClick={() => {
+                                if (!selectedTemplateId) return;
+                                const input = document.getElementById("bulk-file-input") as HTMLInputElement;
+                                input?.click();
+                              }}
+                            >
+                              <Upload className="w-10 h-10 text-gray-500 mb-3" />
+                              <span className="text-sm font-medium text-gray-300 mb-1">
+                                {uploading ? "Processing file..." : "Click to upload"}
+                              </span>
+                              <span className="text-xs text-gray-500">.xlsx, .xls, or .csv files supported</span>
+                              <input
+                                id="bulk-file-input"
+                                type="file"
+                                accept=".xlsx,.xls,.csv"
+                                onChange={handleFileUpload}
+                                disabled={!selectedTemplateId || uploading}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                style={{ pointerEvents: selectedTemplateId ? "auto" : "none" }}
+                              />
                             </div>
                           </section>
 
-                          {/* Category Filters */}
-                          <section className="p-5 rounded-xl border border-white/10 bg-white/5">
-                            <h3 className="text-base font-semibold mb-1">Skip Categories</h3>
-                            <p className="text-sm text-gray-400 mb-4">Green toggle = that category is being skipped</p>
-                            <div className="space-y-3">
-                              {[
-                                { key: "skip_marketing", label: "📢 Marketing & Promotions", desc: "Amazon, HubSpot, Mailchimp, promotional offers" },
-                                { key: "skip_newsletters", label: "📰 Newsletters & Digests", desc: "Weekly digests, blog updates, curated content" },
-                                { key: "skip_social", label: "👥 Social Notifications", desc: "Facebook, LinkedIn, Twitter, Instagram alerts" },
-                                { key: "skip_transactional", label: "🧾 Transactional", desc: "Receipts, shipping updates, account alerts" },
-                                { key: "skip_job_alerts", label: "💼 Job Alerts & Career", desc: "Indeed, Naukri, AngelList, Glassdoor" },
-                              ].map(cat => (
-                                <div key={cat.key} className="flex items-center justify-between p-3 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
-                                  <div className="flex-1 mr-4">
-                                    <span className="text-sm font-medium">{cat.label}</span>
-                                    <p className="text-xs text-gray-500 mt-0.5">{cat.desc}</p>
-                                  </div>
+                          {/* Upload Result Preview */}
+                          {uploadResult && !uploadResult.error && (
+                            <section className="p-5 rounded-xl border border-green-500/30 bg-green-500/5">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-sm font-semibold text-green-400">
+                                  ✓ {uploadResult.contactsCount} contacts found
+                                </h4>
+                                <div className="flex gap-2">
                                   <button
-                                    onClick={() => setEmailSettings(s => ({ ...s, [cat.key]: !(s as any)[cat.key] }))}
-                                    className="focus:outline-none"
+                                    onClick={() => setUploadResult(null)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/20 text-gray-300 hover:bg-white/10 transition-colors"
                                   >
-                                    {(emailSettings as any)[cat.key]
-                                      ? <ToggleRight className="w-10 h-10 text-green-400" />
-                                      : <ToggleLeft className="w-10 h-10 text-gray-500" />}
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => handleSendCampaign(uploadResult.campaign.id)}
+                                    disabled={sending}
+                                    className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-medium bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50"
+                                  >
+                                    {sending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                    {sending ? "Sending..." : "Send All Emails"}
                                   </button>
                                 </div>
-                              ))}
-                            </div>
-                          </section>
-
-                          {/* AI Tone */}
-                          <section className="p-5 rounded-xl border border-white/10 bg-white/5">
-                            <h3 className="text-base font-semibold mb-1">AI Tone</h3>
-                            <p className="text-sm text-gray-400 mb-4">How the AI sounds when replying to emails</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                              {[
-                                { value: "professional", label: "👔 Professional", desc: "Business-appropriate" },
-                                { value: "friendly", label: "😊 Friendly", desc: "Warm & approachable" },
-                                { value: "casual", label: "🤙 Casual", desc: "Conversational" },
-                                { value: "formal", label: "📜 Formal", desc: "Corporate B2B" },
-                              ].map(tone => (
-                                <button key={tone.value}
-                                  onClick={() => setEmailSettings(s => ({ ...s, reply_tone: tone.value }))}
-                                  className={`p-3 rounded-xl text-left border transition-all ${
-                                    emailSettings.reply_tone === tone.value
-                                      ? "border-[#6C63FF] bg-[#6C63FF]/10"
-                                      : "border-white/10 hover:border-white/20"
-                                  }`}
-                                >
-                                  <span className="text-sm font-medium">{tone.label}</span>
-                                  <p className="text-xs text-gray-400 mt-1">{tone.desc}</p>
-                                </button>
-                              ))}
-                            </div>
-                          </section>
-
-                          {/* Max Replies Per Day */}
-                          <section className="p-5 rounded-xl border border-white/10 bg-white/5">
-                            <div className="flex items-center justify-between mb-3">
-                              <div>
-                                <h3 className="text-base font-semibold">Max Replies / Day</h3>
-                                <p className="text-sm text-gray-400">Safety limit to prevent over-sending</p>
                               </div>
-                              <span className="text-xl font-bold text-[#6C63FF]">{emailSettings.max_replies_per_day}</span>
+                              <p className="text-xs text-gray-400">
+                                Campaign "{uploadResult.campaign.name}" is ready. Each contact will receive a personalized email using the selected template.
+                              </p>
+                            </section>
+                          )}
+                          {uploadResult?.error && (
+                            <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/5">
+                              <p className="text-sm text-red-400">{uploadResult.error}</p>
                             </div>
-                            <input type="range" min={5} max={200}
-                              value={emailSettings.max_replies_per_day}
-                              onChange={e => setEmailSettings(s => ({ ...s, max_replies_per_day: parseInt(e.target.value) }))}
-                              className="w-full accent-[#6C63FF] h-2"
-                            />
-                            <div className="flex justify-between text-xs text-gray-500 mt-1">
-                              <span>5</span><span>200</span>
-                            </div>
-                          </section>
+                          )}
 
-                          {/* Custom Instructions */}
-                          <section className="p-5 rounded-xl border border-white/10 bg-white/5">
-                            <h3 className="text-base font-semibold mb-1">Custom Instructions</h3>
-                            <p className="text-sm text-gray-400 mb-3">Extra guidance for the AI when generating replies</p>
-                            <textarea
-                              value={emailSettings.custom_instructions || ""}
-                              onChange={e => setEmailSettings(s => ({ ...s, custom_instructions: e.target.value }))}
-                              placeholder="e.g. Always mention our 14-day free trial. Focus on small businesses. Never offer discounts below 10%."
-                              rows={4}
-                              className="w-full px-4 py-3 rounded-xl text-sm border border-white/10 bg-white/5 focus:border-[#6C63FF] focus:outline-none resize-none placeholder-gray-600"
-                            />
-                          </section>
-                        </>
+                          {/* Previous Campaigns */}
+                          {campaigns.length > 0 && (
+                            <section>
+                              <h4 className="text-sm font-semibold mb-3">Previous Campaigns</h4>
+                              <div className="space-y-2">
+                                {campaigns.map((c: any) => (
+                                  <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5">
+                                    <div>
+                                      <span className="text-sm font-medium">{c.name}</span>
+                                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                                        c.status === "completed" ? "bg-green-500/20 text-green-400"
+                                          : c.status === "sending" ? "bg-yellow-500/20 text-yellow-400"
+                                          : "bg-white/10 text-gray-400"
+                                      }`}>{c.status}</span>
+                                      <p className="text-xs text-gray-500 mt-0.5">
+                                        {c.sent_count || 0} sent / {c.total_recipients} total
+                                        {c.failed_count > 0 && ` · ${c.failed_count} failed`}
+                                      </p>
+                                    </div>
+                                    {c.status === "draft" && (
+                                      <button
+                                        onClick={() => handleSendCampaign(c.id)}
+                                        disabled={sending}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#6C63FF] hover:bg-[#5B54E6] text-white transition-colors disabled:opacity-50"
+                                      >
+                                        <Send className="h-3.5 w-3.5" /> Send
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </section>
+                          )}
+                        </div>
                       )}
                     </>
                   ) : (
@@ -982,17 +1417,17 @@ export default function IntegrationsPage() {
                     >
                       Cancel
                     </button>
-                    <button
-                      onClick={async () => {
-                        await handleSaveEmailSettings();
-                      }}
-                      disabled={emailSettingsSaving}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-[#6C63FF] hover:bg-[#5B54E6] text-white transition-colors disabled:opacity-50"
-                    >
-                      {emailSettingsSaving ? <RefreshCw className="h-4 w-4 animate-spin" />
-                        : emailSettingsSaved ? <><CheckCircle2 className="h-4 w-4" /> Saved!</>
-                        : <><Save className="h-4 w-4" /> Save Settings</>}
-                    </button>
+<button
+	                      onClick={async () => {
+	                        await handleSaveEmailSettings();
+	                        setExpandedSettings(null);
+	                      }}
+	                      disabled={emailSettingsSaving}
+	                      className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-[#6C63FF] hover:bg-[#5B54E6] text-white transition-colors disabled:opacity-50"
+	                    >
+	                      {emailSettingsSaving ? <RefreshCw className="h-4 w-4 animate-spin" />
+	                        : <><Save className="h-4 w-4" /> Save Settings</>}
+	                    </button>
                   </div>
                 )}
                 {expandedSettings !== "gmail" && (
