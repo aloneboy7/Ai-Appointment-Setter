@@ -1,12 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { getServerSession } from "next-auth";
 
-// GET /api/email-templates — list all templates for the current user
+// GET — List all email templates for the current user
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -29,10 +28,10 @@ export async function GET() {
   }
 }
 
-// POST /api/email-templates — create a new template
-export async function POST(req: NextRequest) {
+// POST — Create a new email template
+export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -43,29 +42,25 @@ export async function POST(req: NextRequest) {
     }
     const userId = userResult.rows[0].id;
 
-    const body = await req.json();
-    const { name, subject, body: templateBody, variables, isDefault, category } = body;
+    const body = await request.json();
+    const { name, subject, body: templateBody, category } = body;
 
     if (!name || !subject || !templateBody) {
       return NextResponse.json({ error: "Name, subject, and body are required" }, { status: 400 });
     }
 
-    // Extract variables from template body ({{variable_name}} pattern)
-    const varRegex = /\{\{(\w+)\}\}/g;
-    const bodyMatches = [...templateBody.matchAll(varRegex)].map((m) => m[1]);
-    const subjMatches = [...subject.matchAll(varRegex)].map((m) => m[1]);
-    const extractedVars = [...new Set([...bodyMatches, ...subjMatches])];
-
-    // If setting as default, unset other defaults
-    if (isDefault) {
-      await query("UPDATE email_templates SET is_default = false WHERE user_id = $1", [userId]);
+    // Extract variables from {{variable}} patterns
+    const variableRegex = /\{\{(\w+)\}\}/g;
+    const variables: string[] = [];
+    let match;
+    while ((match = variableRegex.exec(`${subject} ${templateBody}`)) !== null) {
+      if (!variables.includes(match[1])) variables.push(match[1]);
     }
 
     const result = await query(
-      `INSERT INTO email_templates (user_id, name, subject, body, variables, is_default, category)
-       VALUES ($1, $2, $3, $4, $5::text[], $6, $7)
-       RETURNING *`,
-      [userId, name, subject, templateBody, extractedVars, isDefault || false, category || "general"]
+      `INSERT INTO email_templates (user_id, name, subject, body, variables, category)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [userId, name, subject, templateBody, variables, category || "general"]
     );
 
     return NextResponse.json({ template: result.rows[0] }, { status: 201 });
@@ -75,51 +70,40 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT /api/email-templates — update a template
-export async function PUT(req: NextRequest) {
+// PUT — Update an email template
+export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
-    if (userResult.rows.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-    const userId = userResult.rows[0].id;
+    const userId = userResult.rows[0]?.id;
+    if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const body = await req.json();
-    const { id, name, subject, body: templateBody, isDefault, category } = body;
+    const body = await request.json();
+    const { id, name, subject, body: templateBody, category } = body;
 
-    if (!id) {
-      return NextResponse.json({ error: "Template ID is required" }, { status: 400 });
-    }
+    if (!id) return NextResponse.json({ error: "Template ID required" }, { status: 400 });
 
-    // Verify ownership
-    const existing = await query("SELECT user_id FROM email_templates WHERE id = $1", [id]);
-    if (existing.rows.length === 0 || existing.rows[0].user_id !== userId) {
-      return NextResponse.json({ error: "Template not found" }, { status: 404 });
-    }
-
-    // Extract variables from updated body
-    const varRegex = /\{\{(\w+)\}\}/g;
-    const bodyMatches = [...templateBody.matchAll(varRegex)].map((m) => m[1]);
-    const subjMatches = [...subject.matchAll(varRegex)].map((m) => m[1]);
-    const extractedVars = [...new Set([...bodyMatches, ...subjMatches])];
-
-    // If setting as default, unset other defaults
-    if (isDefault) {
-      await query("UPDATE email_templates SET is_default = false WHERE user_id = $1", [userId]);
+    // Extract variables
+    const variableRegex = /\{\{(\w+)\}\}/g;
+    const variables: string[] = [];
+    let match;
+    while ((match = variableRegex.exec(`${subject || ""} ${templateBody || ""}`)) !== null) {
+      if (!variables.includes(match[1])) variables.push(match[1]);
     }
 
     const result = await query(
-      `UPDATE email_templates
-       SET name = $1, subject = $2, body = $3, variables = $4::text[], is_default = $5, category = $6, updated_at = NOW()
-       WHERE id = $7 AND user_id = $8
-       RETURNING *`,
-      [name, subject, templateBody, extractedVars, isDefault || false, category || "general", id, userId]
+      `UPDATE email_templates SET name = $1, subject = $2, body = $3, variables = $4, category = $5, updated_at = NOW()
+       WHERE id = $6 AND user_id = $7 RETURNING *`,
+      [name, subject, templateBody, variables, category || "general", id, userId]
     );
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ error: "Template not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ template: result.rows[0] });
   } catch (error) {
@@ -128,26 +112,21 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// DELETE /api/email-templates?id=X
-export async function DELETE(req: NextRequest) {
+// DELETE — Remove an email template
+export async function DELETE(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
-    if (userResult.rows.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-    const userId = userResult.rows[0].id;
+    const userId = userResult.rows[0]?.id;
+    if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ error: "Template ID is required" }, { status: 400 });
-    }
+    if (!id) return NextResponse.json({ error: "Template ID required" }, { status: 400 });
 
     await query("DELETE FROM email_templates WHERE id = $1 AND user_id = $2", [id, userId]);
 

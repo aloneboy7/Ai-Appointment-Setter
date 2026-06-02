@@ -395,6 +395,7 @@ export default function IntegrationsPage() {
   const [emailSettingsSaving, setEmailSettingsSaving] = useState(false);
   const [newSkipDomain, setNewSkipDomain] = useState("");
   const [newAllowEmail, setNewAllowEmail] = useState("");
+  const [expandedSettings, setExpandedSettings] = useState<string | null>(null);
 
   const fetchEmailSettings = useCallback(async () => {
     try {
@@ -735,19 +736,175 @@ export default function IntegrationsPage() {
                   )}
                 </div>
 
-                {/* ── Gmail: Email Settings Button ── */}
-                {integration.key === "gmail" && connected && (
-                  <button
-                    onClick={() => router.push("/dashboard/email-settings")}
-                    className="mt-3 w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium border border-purple-300 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Zap className="h-3.5 w-3.5" />
-                      Email Automation Settings
-                    </span>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                )}
+                {/* ── Per-Integration Settings (inline expandable) ── */}
+                {connected && (() => {
+                  const settingKey = integration.key;
+                  const isGmail = settingKey === "gmail";
+                  const isWhatsApp = settingKey === "whatsapp";
+                  const isSlack = settingKey === "slack";
+                  const btnColor = isGmail
+                    ? "border-purple-300 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-500/20"
+                    : isWhatsApp
+                    ? "border-green-300 dark:border-green-500/30 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-500/20"
+                    : isSlack
+                    ? "border-[#E01E5A]/30 bg-[#E01E5A]/10 text-[#E01E5A] hover:bg-[#E01E5A]/20"
+                    : "border-white/10 bg-white/5 text-gray-300 hover:bg-white/10";
+                  const label = isGmail ? "Email Automation Settings" : `${integration.name} Settings`;
+                  const icon = isGmail ? <Zap className="h-3.5 w-3.5" /> : <Settings2 className="h-3.5 w-3.5" />;
+
+                  return (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => setExpandedSettings(expandedSettings === settingKey ? null : settingKey)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium border transition-colors ${btnColor}`}
+                      >
+                        <span className="flex items-center gap-2">{icon} {label}</span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${expandedSettings === settingKey ? "rotate-180" : ""}`} />
+                      </button>
+
+                      {expandedSettings === settingKey && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          className="mt-3 space-y-4 p-4 rounded-xl border border-white/10 bg-white/5"
+                        >
+                          {isGmail ? (
+                            <>
+                              {/* Auto-Reply Toggle */}
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm font-medium">Auto-Reply</p>
+                                  <p className="text-xs text-gray-400">Automatically reply to incoming emails</p>
+                                </div>
+                                <button onClick={() => setEmailSettings(s => ({ ...s, auto_reply_enabled: !s.auto_reply_enabled }))}>
+                                  {emailSettings.auto_reply_enabled
+                                    ? <ToggleRight className="w-10 h-10 text-green-400" />
+                                    : <ToggleLeft className="w-10 h-10 text-gray-500" />}
+                                </button>
+                              </div>
+
+                              {emailSettings.auto_reply_enabled && (
+                                <>
+                                  {/* Reply Mode */}
+                                  <div>
+                                    <p className="text-sm font-medium mb-2">Reply Mode</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[
+                                        { value: "replies_and_inquiries", label: "🧠 Smart", desc: "Replies + inquiries" },
+                                        { value: "replies_only", label: "↩️ Replies", desc: "Only direct replies" },
+                                        { value: "all", label: "📬 All", desc: "All incoming" },
+                                        { value: "allowlist_only", label: "✅ Allowlist", desc: "Whitelisted only" },
+                                      ].map(mode => (
+                                        <button key={mode.value}
+                                          onClick={() => setEmailSettings(s => ({ ...s, reply_mode: mode.value }))}
+                                          className={`p-2 rounded-lg text-xs text-left border transition-all ${
+                                            emailSettings.reply_mode === mode.value
+                                              ? "border-[#6C63FF] bg-[#6C63FF]/10"
+                                              : "border-white/10 hover:border-white/20"
+                                          }`}
+                                        >
+                                          <span className="font-medium">{mode.label}</span>
+                                          <p className="text-gray-400 mt-0.5">{mode.desc}</p>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Category Filters */}
+                                  <div>
+                                    <p className="text-sm font-medium mb-2">Skip Categories</p>
+                                    <div className="space-y-2">
+                                      {[
+                                        { key: "skip_marketing", label: "📢 Marketing", desc: "Promotions & offers" },
+                                        { key: "skip_newsletters", label: "📰 Newsletters", desc: "Digests & updates" },
+                                        { key: "skip_social", label: "👥 Social", desc: "Facebook, LinkedIn" },
+                                        { key: "skip_transactional", label: "🧾 Transactional", desc: "Receipts & alerts" },
+                                        { key: "skip_job_alerts", label: "💼 Job Alerts", desc: "Indeed, Naukri" },
+                                      ].map(cat => (
+                                        <div key={cat.key} className="flex items-center justify-between py-1.5">
+                                          <div>
+                                            <span className="text-xs font-medium">{cat.label}</span>
+                                            <p className="text-gray-500 text-xs">{cat.desc}</p>
+                                          </div>
+                                          <button onClick={() => setEmailSettings(s => ({ ...s, [cat.key]: !(s as any)[cat.key] }))}>
+                                            {(emailSettings as any)[cat.key]
+                                              ? <ToggleRight className="w-8 h-8 text-green-400" />
+                                              : <ToggleLeft className="w-8 h-8 text-gray-500" />}
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <p className="text-gray-500 text-xs mt-2">Green = Skipping that category</p>
+                                  </div>
+
+                                  {/* AI Tone */}
+                                  <div>
+                                    <p className="text-sm font-medium mb-2">AI Tone</p>
+                                    <div className="flex gap-2">
+                                      {["professional", "friendly", "casual", "formal"].map(tone => (
+                                        <button key={tone}
+                                          onClick={() => setEmailSettings(s => ({ ...s, reply_tone: tone }))}
+                                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                                            emailSettings.reply_tone === tone
+                                              ? "border-[#6C63FF] bg-[#6C63FF]/10 text-[#6C63FF]"
+                                              : "border-white/10 text-gray-400 hover:border-white/20"
+                                          }`}
+                                        >
+                                          {tone.charAt(0).toUpperCase() + tone.slice(1)}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Max Replies */}
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <p className="text-sm font-medium">Max Replies / Day</p>
+                                      <span className="text-xs text-[#6C63FF] font-medium">{emailSettings.max_replies_per_day}</span>
+                                    </div>
+                                    <input type="range" min={5} max={200}
+                                      value={emailSettings.max_replies_per_day}
+                                      onChange={e => setEmailSettings(s => ({ ...s, max_replies_per_day: parseInt(e.target.value) }))}
+                                      className="w-full accent-[#6C63FF]"
+                                    />
+                                  </div>
+
+                                  {/* Custom Instructions */}
+                                  <div>
+                                    <p className="text-sm font-medium mb-1">Custom Instructions</p>
+                                    <textarea
+                                      value={emailSettings.custom_instructions || ""}
+                                      onChange={e => setEmailSettings(s => ({ ...s, custom_instructions: e.target.value }))}
+                                      placeholder="Extra instructions for the AI when replying..."
+                                      rows={2}
+                                      className="w-full px-3 py-2 rounded-lg text-xs border border-white/10 bg-white/5 focus:border-[#6C63FF] focus:outline-none resize-none"
+                                    />
+                                  </div>
+
+                                  {/* Save */}
+                                  <button
+                                    onClick={handleSaveEmailSettings}
+                                    disabled={emailSettingsSaving}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-[#6C63FF] hover:bg-[#5B54E6] text-white transition-colors disabled:opacity-50"
+                                  >
+                                    {emailSettingsSaving ? <RefreshCw className="h-4 w-4 animate-spin" />
+                                      : emailSettingsSaved ? <><CheckCircle2 className="h-4 w-4" /> Saved!</>
+                                      : <><Save className="h-4 w-4" /> Save Settings</>}
+                                  </button>
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2 text-xs text-gray-400">
+                              <Info className="h-4 w-4 flex-shrink-0" />
+                              <p>{integration.name} advanced settings — auto-reply templates, notification preferences, and workflow rules will be available here once fully configured.</p>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

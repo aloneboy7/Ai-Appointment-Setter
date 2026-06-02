@@ -16,7 +16,6 @@ const NAV_ITEMS = [
   { icon: Calendar, label: "Calendar", href: "/dashboard/calendar" },
   { icon: MessageSquare, label: "Conversations", href: "/dashboard/conversations" },
   { icon: Plug, label: "Integrations", href: "/dashboard/integrations" },
-  { icon: Mail, label: "Email Settings", href: "/dashboard/email-settings" },
   { icon: Bot, label: "AI Settings", href: "/dashboard/ai-settings" },
   { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
   { icon: Settings, label: "Settings", href: "/dashboard/settings" },

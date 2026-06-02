@@ -1,29 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import nodemailer from "nodemailer";
+import { getServerSession } from "next-auth";
+import * as XLSX from "xlsx";
+import { createTransport } from "nodemailer";
 
-// GET /api/email-campaigns — list all campaigns
+// GET — List campaigns
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const session = await getServerSession();
+    if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
-    if (userResult.rows.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-    const userId = userResult.rows[0].id;
+    const userId = userResult.rows[0]?.id;
+    if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const result = await query(
-      `SELECT c.*, t.name as template_name, t.subject as template_subject
-       FROM email_campaigns c
-       LEFT JOIN email_templates t ON c.template_id = t.id
-       WHERE c.user_id = $1
-       ORDER BY c.created_at DESC`,
+      "SELECT c.*, t.name as template_name FROM email_campaigns c LEFT JOIN email_templates t ON c.template_id = t.id WHERE c.user_id = $1 ORDER BY c.created_at DESC",
       [userId]
     );
 
@@ -34,181 +26,202 @@ export async function GET() {
   }
 }
 
-// POST /api/email-campaigns — create and optionally send a campaign
-export async function POST(req: NextRequest) {
+// POST — Create campaign from uploaded file or manual contacts
+export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const session = await getServerSession();
+    if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
-    if (userResult.rows.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-    const userId = userResult.rows[0].id;
+    const userId = userResult.rows[0]?.id;
+    if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const body = await req.json();
-    const { templateId, name, contacts, variableOverrides, sendNow } = body;
+    const contentType = request.headers.get("content-type") || "";
 
-    if (!templateId || !name || !contacts || contacts.length === 0) {
-      return NextResponse.json({ error: "Template, name, and contacts are required" }, { status: 400 });
-    }
+    // ── File upload (Excel/CSV) ──
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      const file = formData.get("file") as File | null;
+      const templateId = formData.get("template_id") as string;
+      const campaignName = formData.get("name") as string;
 
-    // Get template
-    const templateResult = await query("SELECT * FROM email_templates WHERE id = $1 AND user_id = $2", [templateId, userId]);
-    if (templateResult.rows.length === 0) {
-      return NextResponse.json({ error: "Template not found" }, { status: 404 });
-    }
-    const template = templateResult.rows[0];
+      if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+      if (!templateId) return NextResponse.json({ error: "Template ID required" }, { status: 400 });
 
-    // Get Gmail credentials
-    const gmailResult = await query(
-      "SELECT settings FROM user_integrations WHERE user_id = $1 AND integration_key = 'gmail' AND status = 'connected'",
-      [userId]
-    );
-    if (gmailResult.rows.length === 0) {
-      return NextResponse.json({ error: "Gmail not connected. Please connect Gmail first." }, { status: 400 });
-    }
-    const gmailSettings = gmailResult.rows[0].settings;
-    const senderEmail = gmailSettings.sender_email;
-    const senderName = gmailSettings.sender_name || "AI Appointment Setter";
-    const appPassword = gmailSettings.app_password;
-    const replyTo = gmailSettings.reply_to || senderEmail;
+      // Parse Excel/CSV
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const workbook = XLSX.read(buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets[sheetName]);
 
-    if (!appPassword) {
-      return NextResponse.json({ error: "Gmail app password not configured" }, { status: 400 });
-    }
+      if (rows.length === 0) return NextResponse.json({ error: "File is empty" }, { status: 400 });
 
-    // Create campaign
-    const campaignResult = await query(
-      `INSERT INTO email_campaigns (user_id, template_id, name, status, total_recipients, contacts, variable_overrides, scheduled_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING *`,
-      [
-        userId,
-        templateId,
-        name,
-        sendNow ? "sending" : "draft",
-        contacts.length,
-        JSON.stringify(contacts),
-        JSON.stringify(variableOverrides || {}),
-        sendNow ? new Date() : null,
-      ]
-    );
-    const campaign = campaignResult.rows[0];
-
-    if (!sendNow) {
-      return NextResponse.json({ campaign, message: "Campaign saved as draft" }, { status: 201 });
-    }
-
-    // Send emails
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: senderEmail,
-        pass: appPassword,
-      },
-    });
-
-    let sentCount = 0;
-    let failedCount = 0;
-    const errors: string[] = [];
-
-    for (const contact of contacts) {
-      try {
-        // Replace variables in subject and body
-        const replaceVars = (text: string) => {
-          return text.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-            // Check overrides first, then contact fields, then defaults
-            const overrides = variableOverrides || {};
-            if (overrides[varName] !== undefined) return overrides[varName];
-            if (contact[varName] !== undefined) return contact[varName];
-            // Common defaults
-            if (varName === "sender_name") return senderName;
-            if (varName === "sender_email") return senderEmail;
-            if (varName === "book_demo_url") return `${process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000"}/book-demo`;
-            return match; // leave unreplaced
-          });
-        };
-
-        const personalizedSubject = replaceVars(template.subject);
-        const personalizedBody = replaceVars(template.body);
-
-        await transporter.sendMail({
-          from: `"${senderName}" <${senderEmail}>`,
-          to: contact.email,
-          replyTo,
-          subject: personalizedSubject,
-          text: personalizedBody,
-          html: personalizedBody.replace(/\n/g, "<br>"),
-        });
-
-        sentCount++;
-
-        // Log each sent email
-        await query(
-          `INSERT INTO email_logs (user_id, recipient, subject, body, status, provider) VALUES ($1, $2, $3, $4, 'sent', 'campaign')`,
-          [userId, contact.email, personalizedSubject, personalizedBody]
-        );
-
-        // Auto-create lead if not exists
-        const existingLead = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [contact.email, userId]);
-        if (existingLead.rows.length === 0) {
-          await query(
-            `INSERT INTO leads (user_id, name, email, phone, company, source, status) VALUES ($1, $2, $3, $4, $5, 'campaign', 'contacted')`,
-            [userId, contact.name || "there", contact.email, contact.phone || null, contact.company || null]
-          );
+      // Normalize column names (case-insensitive)
+      const contacts = rows.map(row => {
+        const normalized: Record<string, string> = {};
+        for (const [key, value] of Object.entries(row)) {
+          normalized[key.toLowerCase().trim()] = String(value || "").trim();
         }
-      } catch (sendErr) {
-        failedCount++;
-        errors.push(`${contact.email}: ${String(sendErr)}`);
-        console.error(`[campaign] Failed to send to ${contact.email}:`, sendErr);
+        return {
+          email: normalized["email"] || normalized["e-mail"] || normalized["mail"] || "",
+          name: normalized["name"] || normalized["full name"] || normalized["first name"] || "",
+          company: normalized["company"] || normalized["organization"] || normalized["org"] || "",
+          phone: normalized["phone"] || normalized["mobile"] || normalized["tel"] || "",
+          ...normalized, // preserve all columns for variable substitution
+        };
+      }).filter(c => c.email && c.email.includes("@"));
+
+      if (contacts.length === 0) return NextResponse.json({ error: "No valid email addresses found" }, { status: 400 });
+
+      // Create campaign
+      const result = await query(
+        `INSERT INTO email_campaigns (user_id, template_id, name, status, total_recipients, contacts)
+         VALUES ($1, $2, $3, 'draft', $4, $5) RETURNING *`,
+        [userId, parseInt(templateId), campaignName || `Campaign ${Date.now()}`, contacts.length, JSON.stringify(contacts)]
+      );
+
+      return NextResponse.json({ campaign: result.rows[0], contactsCount: contacts.length }, { status: 201 });
+    }
+
+    // ── JSON body (manual contacts or send command) ──
+    const body = await request.json();
+    const { action } = body;
+
+    // Send campaign
+    if (action === "send") {
+      const { campaign_id } = body;
+      if (!campaign_id) return NextResponse.json({ error: "Campaign ID required" }, { status: 400 });
+
+      // Get campaign + template + Gmail creds
+      const campaignResult = await query(
+        "SELECT * FROM email_campaigns WHERE id = $1 AND user_id = $2",
+        [campaign_id, userId]
+      );
+      const campaign = campaignResult.rows[0];
+      if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+
+      const templateResult = await query("SELECT * FROM email_templates WHERE id = $1", [campaign.template_id]);
+      const template = templateResult.rows[0];
+      if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });
+
+      const gmailResult = await query(
+        "SELECT settings FROM user_integrations WHERE user_id = $1 AND integration_key = 'gmail' AND status = 'connected'",
+        [userId]
+      );
+      const gmailSettings = gmailResult.rows[0]?.settings;
+      if (!gmailSettings?.sender_email || !gmailSettings?.app_password) {
+        return NextResponse.json({ error: "Gmail not connected. Connect Gmail in Integrations first." }, { status: 400 });
       }
 
-      // Small delay between sends to avoid Gmail rate limits (1 per second)
-      await new Promise((r) => setTimeout(r, 1000));
+      // Mark campaign as sending
+      await query(
+        "UPDATE email_campaigns SET status = 'sending', started_at = NOW() WHERE id = $1",
+        [campaign_id]
+      );
+
+      const contacts: Record<string, string>[] = typeof campaign.contacts === "string"
+        ? JSON.parse(campaign.contacts) : campaign.contacts;
+
+      const transporter = createTransport({
+        service: "gmail",
+        auth: { user: gmailSettings.sender_email, pass: gmailSettings.app_password },
+      });
+
+      let sent = 0;
+      let failed = 0;
+
+      for (const contact of contacts) {
+        try {
+          // Replace variables in subject and body
+          let subject = template.subject;
+          let emailBody = template.body;
+          const replyTo = gmailSettings.reply_to || gmailSettings.sender_email;
+          const senderName = gmailSettings.sender_name || "AI Appointment Setter";
+
+          // Add sender_name to contact data
+          const data = { ...contact, sender_name: senderName };
+
+          for (const [key, value] of Object.entries(data)) {
+            const regex = new RegExp(`\\{\\{${key}\\}\\}`, "gi");
+            subject = subject.replace(regex, value);
+            emailBody = emailBody.replace(regex, value);
+          }
+
+          await transporter.sendMail({
+            from: `"${senderName}" <${gmailSettings.sender_email}>`,
+            replyTo,
+            to: contact.email,
+            subject,
+            text: emailBody,
+          });
+
+          // Log the sent email
+          await query(
+            `INSERT INTO email_logs (user_id, recipient, subject, body, status, provider) VALUES ($1, $2, $3, $4, 'sent', 'campaign')`,
+            [userId, contact.email, subject, emailBody]
+          );
+
+          sent++;
+        } catch (err) {
+          console.error(`Failed to send to ${contact.email}:`, err);
+          failed++;
+        }
+
+        // Update progress every 5 emails
+        if ((sent + failed) % 5 === 0) {
+          await query(
+            "UPDATE email_campaigns SET sent_count = $1, failed_count = $2 WHERE id = $3",
+            [sent, failed, campaign_id]
+          );
+        }
+      }
+
+      // Final update
+      await query(
+        "UPDATE email_campaigns SET status = 'completed', sent_count = $1, failed_count = $2, completed_at = NOW() WHERE id = $3",
+        [sent, failed, campaign_id]
+      );
+
+      return NextResponse.json({ sent, failed, total: contacts.length });
     }
 
-    // Update campaign status
-    await query(
-      `UPDATE email_campaigns SET status = 'completed', sent_count = $1, failed_count = $2, completed_at = NOW() WHERE id = $3`,
-      [sentCount, failedCount, campaign.id]
+    // Create from manual contacts
+    const { name, template_id, contacts } = body;
+    if (!template_id || !contacts?.length) {
+      return NextResponse.json({ error: "Template and contacts required" }, { status: 400 });
+    }
+
+    const result = await query(
+      `INSERT INTO email_campaigns (user_id, template_id, name, status, total_recipients, contacts)
+       VALUES ($1, $2, $3, 'draft', $4, $5) RETURNING *`,
+      [userId, template_id, name || `Campaign ${Date.now()}`, contacts.length, JSON.stringify(contacts)]
     );
 
-    return NextResponse.json({
-      campaign: { ...campaign, sent_count: sentCount, failed_count: failedCount, status: "completed" },
-      sent: sentCount,
-      failed: failedCount,
-      errors: errors.length > 0 ? errors : undefined,
-    });
+    return NextResponse.json({ campaign: result.rows[0] }, { status: 201 });
   } catch (error) {
     console.error("Campaign error:", error);
-    return NextResponse.json({ error: "Failed to create/send campaign: " + String(error) }, { status: 500 });
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
-// PUT /api/email-campaigns — send a draft campaign
-export async function PUT(req: NextRequest) {
+// DELETE — Remove a campaign
+export async function DELETE(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const session = await getServerSession();
+    if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = await req.json();
-    const { id } = body;
+    const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
+    const userId = userResult.rows[0]?.id;
+    if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    if (!id) {
-      return NextResponse.json({ error: "Campaign ID required" }, { status: 400 });
-    }
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "Campaign ID required" }, { status: 400 });
 
-    // Re-send by creating a new POST-like request internally
-    // For simplicity, we just mark the draft as ready to send
-    // The actual sending should be done via POST with the same data
-    return NextResponse.json({ error: "Use POST to create and send campaigns" }, { status: 400 });
+    await query("DELETE FROM email_campaigns WHERE id = $1 AND user_id = $2", [id, userId]);
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Campaign update error:", error);
-    return NextResponse.json({ error: "Failed to update campaign" }, { status: 500 });
+    console.error("Error deleting campaign:", error);
+    return NextResponse.json({ error: "Failed to delete campaign" }, { status: 500 });
   }
 }
