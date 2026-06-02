@@ -1,0 +1,18 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='630'>
+  <defs>
+    <linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'>
+      <stop offset='0%' stop-color='#0B1020'/>
+      <stop offset='100%' stop-color='#1A1F35'/>
+    </linearGradient>
+    <linearGradient id='accent' x1='0' y1='0' x2='1' y2='0'>
+      <stop offset='0%' stop-color='#6C63FF'/>
+      <stop offset='100%' stop-color='#00D4FF'/>
+    </linearGradient>
+  </defs>
+  <rect width='1200' height='630' fill='url(#bg)'/>
+  <circle cx='200' cy='100' r='150' fill='#6C63FF' opacity='0.08'/>
+  <circle cx='1000' cy='530' r='200' fill='#00D4FF' opacity='0.06'/>
+  <path d='M570 180L470 330h80l-12 70 110-130h-80l12-70z' fill='white' opacity='0.9'/>
+  <text x='600' y='420' text-anchor='middle' font-family='system-ui, -apple-system, sans-serif' font-size='56' font-weight='bold' fill='white'>AI Appointment Setter</text>
+  <text x='600' y='470' text-anchor='middle' font-family='system-ui, -apple-system, sans-serif' font-size='28' fill='url(#accent)'>Never Lose Leads Again</text>
+</svg>
