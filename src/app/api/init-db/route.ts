@@ -200,16 +200,19 @@ export async function GET() {
       await query(`INSERT INTO email_automation_settings (user_id) VALUES (1)`);
     }
 
-    // Seed default email templates for user 1
-    const existingTemplates = await query("SELECT id FROM email_templates WHERE user_id = 1");
-    if (existingTemplates.rows.length === 0) {
-      await query(`
-        INSERT INTO email_templates (user_id, name, subject, body, variables, is_default, category) VALUES
-        (1, 'Welcome Follow-Up', 'Great to meet you, {{name}}!', 'Hi {{name}},\n\nIt was great connecting with you! I wanted to follow up and share some information about AI Appointment Setter.\n\nOur platform helps businesses like {{company}} automate lead follow-ups and book meetings on autopilot.\n\nWould you be interested in a quick demo? You can book one here: {{book_demo_url}}\n\nBest regards,\n{{sender_name}}', ARRAY['name','company','book_demo_url','sender_name'], true, 'follow-up'),
-        (1, 'Demo Booking Confirmation', 'Your Demo is Confirmed — {{date}}', 'Hi {{name}},\n\nYour demo of AI Appointment Setter is confirmed for {{date}} at {{time}}.\n\nDuring the call, we''ll cover:\n• How AI automates your lead follow-ups\n• Smart scheduling that books meetings 24/7\n• ROI you can expect for {{company}}\n\nIf you need to reschedule, just reply to this email.\n\nLooking forward to it!\n{{sender_name}}', ARRAY['name','date','time','company','sender_name'], false, 'confirmation'),
-        (1, 'Pricing Inquiry Response', 'AI Appointment Setter Pricing', 'Hi {{name}},\n\nThanks for your interest in AI Appointment Setter! Here''s a quick overview of our plans:\n\n🚀 Starter — $49/mo: Up to 500 leads, email automation, basic AI replies\n💼 Professional — $149/mo: Up to 5,000 leads, advanced AI, calendar integration\n🏢 Enterprise — $299/mo: Unlimited leads, custom AI training, priority support\n\nAll plans include a 14-day free trial. Would you like to start your trial?\n\nBest,\n{{sender_name}}', ARRAY['name','sender_name'], false, 'pricing'),
-        (1, 'Re-Engagement', 'Still interested in automating your appointments?', 'Hi {{name}},\n\nI noticed we haven''t connected yet about automating your appointment setting. Just wanted to check in!\n\nBusinesses using AI Appointment Setter typically see:\n• 3x more meetings booked\n• 80% reduction in manual follow-ups\n• 40% higher lead conversion\n\nWould a 15-minute demo work for you this week?\n\nCheers,\n{{sender_name}}', ARRAY['name','sender_name'], false, 're-engagement')
-      `);
+    // Seed default email templates for all users
+    const allUsers = await query("SELECT id FROM users");
+    for (const user of allUsers.rows) {
+      const existingTemplates = await query("SELECT id FROM email_templates WHERE user_id = $1", [user.id]);
+      if (existingTemplates.rows.length === 0) {
+        await query(`
+          INSERT INTO email_templates (user_id, name, subject, body, variables, is_default, category) VALUES
+          ($1, 'Welcome Follow-Up', 'Great to meet you, {{name}}!', 'Hi {{name}},\n\nIt was great connecting with you! I wanted to follow up and share some information about AI Appointment Setter.\n\nOur platform helps businesses like {{company}} automate lead follow-ups and book meetings on autopilot.\n\nWould you be interested in a quick demo? You can book one here: {{book_demo_url}}\n\nBest regards,\n{{sender_name}}', ARRAY['name','company','book_demo_url','sender_name'], true, 'follow-up'),
+          ($1, 'Demo Booking Confirmation', 'Your Demo is Confirmed — {{date}}', 'Hi {{name}},\n\nYour demo of AI Appointment Setter is confirmed for {{date}} at {{time}}.\n\nDuring the call, we''ll cover:\n• How AI automates your lead follow-ups\n• Smart scheduling that books meetings 24/7\n• ROI you can expect for {{company}}\n\nIf you need to reschedule, just reply to this email.\n\nLooking forward to it!\n{{sender_name}}', ARRAY['name','date','time','company','sender_name'], false, 'confirmation'),
+          ($1, 'Pricing Inquiry Response', 'AI Appointment Setter Pricing', 'Hi {{name}},\n\nThanks for your interest in AI Appointment Setter! Here''s a quick overview of our plans:\n\n🚀 Starter — $49/mo: Up to 500 leads, email automation, basic AI replies\n💼 Professional — $149/mo: Up to 5,000 leads, advanced AI, calendar integration\n🏢 Enterprise — $299/mo: Unlimited leads, custom AI training, priority support\n\nAll plans include a 14-day free trial. Would you like to start your trial?\n\nBest,\n{{sender_name}}', ARRAY['name','sender_name'], false, 'pricing'),
+          ($1, 'Re-Engagement', 'Still interested in automating your appointments?', 'Hi {{name}},\n\nI noticed we haven''t connected yet about automating your appointment setting. Just wanted to check in!\n\nBusinesses using AI Appointment Setter typically see:\n• 3x more meetings booked\n• 80% reduction in manual follow-ups\n• 40% higher lead conversion\n\nWould a 15-minute demo work for you this week?\n\nCheers,\n{{sender_name}}', ARRAY['name','sender_name'], false, 're-engagement')
+        `, [user.id]);
+      }
     }
 
     return NextResponse.json({ message: "Database initialized successfully" });

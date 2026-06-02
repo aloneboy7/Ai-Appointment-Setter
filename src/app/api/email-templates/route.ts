@@ -51,12 +51,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Extract variables from template body ({{variable_name}} pattern)
-    const extractedVars = Array.from(
-      new Set([
-        ...(templateBody.matchAll(/\{\{(\w+)\}\}/g)).map((m: string[]) => m[1]),
-        ...(subject.matchAll(/\{\{(\w+)\}\}/g)).map((m: string[]) => m[1]),
-      ])
-    );
+    const varRegex = /\{\{(\w+)\}\}/g;
+    const bodyMatches = [...templateBody.matchAll(varRegex)].map((m) => m[1]);
+    const subjMatches = [...subject.matchAll(varRegex)].map((m) => m[1]);
+    const extractedVars = [...new Set([...bodyMatches, ...subjMatches])];
 
     // If setting as default, unset other defaults
     if (isDefault) {
@@ -65,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     const result = await query(
       `INSERT INTO email_templates (user_id, name, subject, body, variables, is_default, category)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, $3, $4, $5::text[], $6, $7)
        RETURNING *`,
       [userId, name, subject, templateBody, extractedVars, isDefault || false, category || "general"]
     );
@@ -105,12 +103,10 @@ export async function PUT(req: NextRequest) {
     }
 
     // Extract variables from updated body
-    const extractedVars = Array.from(
-      new Set([
-        ...(templateBody.matchAll(/\{\{(\w+)\}\}/g)).map((m: string[]) => m[1]),
-        ...(subject.matchAll(/\{\{(\w+)\}\}/g)).map((m: string[]) => m[1]),
-      ])
-    );
+    const varRegex = /\{\{(\w+)\}\}/g;
+    const bodyMatches = [...templateBody.matchAll(varRegex)].map((m) => m[1]);
+    const subjMatches = [...subject.matchAll(varRegex)].map((m) => m[1]);
+    const extractedVars = [...new Set([...bodyMatches, ...subjMatches])];
 
     // If setting as default, unset other defaults
     if (isDefault) {
@@ -119,7 +115,7 @@ export async function PUT(req: NextRequest) {
 
     const result = await query(
       `UPDATE email_templates
-       SET name = $1, subject = $2, body = $3, variables = $4, is_default = $5, category = $6, updated_at = NOW()
+       SET name = $1, subject = $2, body = $3, variables = $4::text[], is_default = $5, category = $6, updated_at = NOW()
        WHERE id = $7 AND user_id = $8
        RETURNING *`,
       [name, subject, templateBody, extractedVars, isDefault || false, category || "general", id, userId]
