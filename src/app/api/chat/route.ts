@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SYSTEM_PROMPT = `You are the AI Appointment Setter assistant — a friendly, knowledgeable chatbot on the AI Appointment Setter website (https://ai-appointment-sette-vlfr5k.drytis.dev). Your ONLY job is to help visitors understand the product and guide them toward signing up.
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000";
+
+const SYSTEM_PROMPT = `You are the AI Appointment Setter assistant — a friendly, knowledgeable chatbot on the AI Appointment Setter website (${SITE_URL}). Your ONLY job is to help visitors understand the product and guide them toward signing up.
 
 ## About AI Appointment Setter
 AI Appointment Setter is a SaaS product that automates lead follow-up, qualification, and appointment booking using AI. It responds to leads in under 12 seconds, qualifies them with intelligent questions, books meetings directly into the user's calendar, and logs everything to the CRM automatically.
@@ -123,7 +125,7 @@ function getFallbackResponse(messages: { role: string; content: string }[]): str
   if (/pric|cost|plan|budget|\$|how much/i.test(lastUserMsg))
     return "Our plans start at $49/month for Starter, $99/month for Growth, and $299/month for Enterprise — all with a free 14-day trial! 🎉";
   if (/demo|call|meeting|schedule|book/i.test(lastUserMsg))
-    return "I'd love to show you a demo! You can schedule one at ai-appointment-sette-vlfr5k.drytis.dev/book-demo";
+    return "I'd love to show you a demo! You can schedule one at " + SITE_URL + "/book-demo";
   if (/integrat|crm|hubspot|salesforce|connect/i.test(lastUserMsg))
     return "We integrate with Google Calendar, Outlook, HubSpot, Salesforce, Slack, WhatsApp, and 40+ more tools!";
   if (/feature|what can|how does/i.test(lastUserMsg))

@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 
+/* ── Dynamic base URL for setup instructions ── */
+const BASE_URL = typeof window !== "undefined" ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000");
+
 /* ── Integration config fields — what each service actually needs ── */
 interface ConfigField {
   key: string;
@@ -67,7 +70,7 @@ const INTEGRATION_CATALOG: IntegrationDef[] = [
       { title: "Go to Google Cloud Console", detail: "Open console.cloud.google.com and sign in with your Google account. Create a new project (click the project dropdown at the top → 'New Project'). Name it (e.g. 'AI Appointment Setter Calendar') and click 'Create'." },
       { title: "Enable the Google Calendar API", detail: "In the left sidebar, navigate to APIs & Services → Library. Search for 'Google Calendar API'. Click on it, then click 'Enable'. Wait for it to activate (usually instant)." },
       { title: "Configure the OAuth consent screen", detail: "Go to APIs & Services → OAuth consent screen. Select 'External' and click 'Create'. Fill in the required fields: App name ('AI Appointment Setter'), User support email, Developer contact email. Click 'Save and Continue' through each step. On 'Scopes', add '.../auth/calendar.events' and '.../auth/calendar.readonly'. On 'Test users', add your Gmail address." },
-      { title: "Create OAuth 2.0 credentials", detail: "Go to APIs & Services → Credentials. Click '+ Create Credentials' → 'OAuth client ID'. Select 'Web application'. Name it 'Calendar Integration'. Under 'Authorized redirect URIs', click 'Add URI' and paste exactly: https://ai-appointment-sette-vlfr5k.drytis.dev/api/auth/callback/google — use the copy button to avoid whitespace errors. Under 'Authorized JavaScript origins', add: https://ai-appointment-sette-vlfr5k.drytis.dev. Click 'Create'." },
+      { title: "Create OAuth 2.0 credentials", detail: `Go to APIs & Services → Credentials. Click '+ Create Credentials' → 'OAuth client ID'. Select 'Web application'. Name it 'Calendar Integration'. Under 'Authorized redirect URIs', click 'Add URI' and paste exactly: ${BASE_URL}/api/auth/callback/google — use the copy button to avoid whitespace errors. Under 'Authorized JavaScript origins', add: ${BASE_URL}. Click 'Create'.` },
       { title: "Copy credentials and connect", detail: "Copy the Client ID (ends in .apps.googleusercontent.com) and Client Secret (starts with GOCSPX-). Paste them above. Enter your Calendar ID (usually your Gmail address, or leave blank for primary calendar). Select sync direction and click 'Connect'." },
     ],
   },
@@ -207,7 +210,7 @@ const INTEGRATION_CATALOG: IntegrationDef[] = [
     setupSteps: [
       { title: "Sign up or log in to Stripe", detail: "Go to stripe.com and create an account (or log in to your existing one). Complete the business verification process — you'll need your business name, address, and bank account details for payouts." },
       { title: "Get your API keys", detail: "In the Stripe Dashboard, go to Developers → API Keys (left sidebar). You'll see two keys: 'Publishable key' (starts with pk_test_ or pk_live_) and 'Secret key' (starts with sk_test_ or sk_live_). Copy both values into the fields above. Use 'test' keys during development, 'live' keys for production." },
-      { title: "Set up webhooks (optional but recommended)", detail: "Go to Developers → Webhooks. Click 'Add endpoint'. Set the URL to https://ai-appointment-sette-vlfr5k.drytis.dev/api/webhooks/stripe. Select events: 'checkout.session.completed', 'invoice.payment_succeeded', 'customer.subscription.updated'. After creating, click into the webhook and copy the 'Signing secret' (starts with whsec_). Paste it into the 'Webhook Signing Secret' field above." },
+      { title: "Set up webhooks (optional but recommended)", detail: `Go to Developers → Webhooks. Click 'Add endpoint'. Set the URL to ${BASE_URL}/api/webhooks/stripe. Select events: 'checkout.session.completed', 'invoice.payment_succeeded', 'customer.subscription.updated'. After creating, click into the webhook and copy the 'Signing secret' (starts with whsec_). Paste it into the 'Webhook Signing Secret' field above.` },
       { title: "Choose your currency and connect", detail: "Select your default currency from the dropdown above (the currency your customers will be charged in). Click 'Connect' to activate. Test with test keys first to verify the integration works before switching to live keys." },
     ],
   },
@@ -255,7 +258,7 @@ const INTEGRATION_CATALOG: IntegrationDef[] = [
     helpUrl: "https://help.salesforce.com/s/articleView?id=sf.remoteaccess_create_connected_app.htm",
     setupSteps: [
       { title: "Create a Connected App in Salesforce", detail: "Log in to Salesforce. Click the gear icon → Setup. In the left sidebar, go to Platform Tools → Apps → App Manager. Click 'New Connected App' in the top-right. Fill in the required fields: App Name (e.g. 'AI Appointment Setter'), API Name (auto-generated), and Contact Email." },
-      { title: "Configure OAuth settings", detail: "In the Connected App form, check 'Enable OAuth Settings'. Set the Callback URL to https://ai-appointment-sette-vlfr5k.drytis.dev/api/integrations/callback/salesforce — use the copy button to avoid whitespace. In 'Selected OAuth Scopes', add: 'api' (Access and manage your data), 'refresh_token, offline_access' (Perform requests at any time). Click 'Save'." },
+      { title: "Configure OAuth settings", detail: `In the Connected App form, check 'Enable OAuth Settings'. Set the Callback URL to ${BASE_URL}/api/integrations/callback/salesforce — use the copy button to avoid whitespace. In 'Selected OAuth Scopes', add: 'api' (Access and manage your data), 'refresh_token, offline_access' (Perform requests at any time). Click 'Save'.` },
       { title: "Copy Consumer Key and Secret", detail: "After saving, click 'Continue'. You'll see the 'Consumer Key' and 'Consumer Secret'. Copy both values. The Consumer Key goes in the 'Consumer Key' field above, and the Consumer Secret goes in the 'Consumer Secret' field above." },
       { title: "Get your Security Token", detail: "Click your profile picture → Settings. In the left sidebar, go to My Personal Information → Reset My Security Token. Click 'Reset Security Token'. Salesforce will email you a new token. Copy it into the 'Security Token' field above. Note: If you can't see this option, your admin may have disabled it — contact your Salesforce administrator." },
       { title: "Enter your Instance URL and connect", detail: "Your Instance URL is the URL you see when logged into Salesforce (e.g. https://yourorg.my.salesforce.com). Copy just the base URL into the 'Instance URL' field. Enter your Salesforce username. Click 'Connect' to activate the integration." },

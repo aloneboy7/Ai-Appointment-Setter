@@ -9,7 +9,7 @@ const inter = Inter({
   display: "swap",
 });
 
-const SITE_URL = "https://ai-appointment-sette-vlfr5k.drytis.dev";
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000";
 
 export const metadata: Metadata = {
   title: "AI Appointment Setter — Book Meetings on Autopilot",

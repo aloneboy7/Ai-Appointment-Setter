@@ -2,6 +2,8 @@ import { ImapFlow } from "imapflow";
 import { simpleParser, ParsedMail } from "mailparser";
 import { query } from "./db";
 
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000";
+
 /* ── Types ── */
 interface GmailCreds {
   email: string;
@@ -183,7 +185,7 @@ CRITICAL RULES:
 Write a reply that:
 1. Answers their question or addresses their inquiry directly
 2. Mentions relevant features of AI Appointment Setter if appropriate (lead automation, meeting booking, CRM integration, AI follow-ups)
-3. Invites them to book a demo at https://ai-appointment-sette-vlfr5k.drytis.dev/book-demo
+3. Invites them to book a demo at ${BASE_URL}/book-demo
 4. Keeps it concise (under 150 words)
 5. Sounds natural and helpful`;
 
@@ -237,7 +239,7 @@ I'd love to help you learn more about our AI-powered appointment setting and lea
 • Real-time analytics and ROI tracking
 
 Would you like to see it in action? Book a free 30-minute demo:
-https://ai-appointment-sette-vlfr5k.drytis.dev/book-demo
+	${BASE_URL}/book-demo
 
 Looking forward to connecting!`;
 }
@@ -298,11 +300,11 @@ async function sendAutoReply(
       <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
         <tr>
           <td style="background:#6C63FF;border-radius:8px;text-align:center;padding:14px;">
-            <a href="https://ai-appointment-sette-vlfr5k.drytis.dev/book-demo" style="color:#fff;text-decoration:none;font-size:14px;font-weight:600;">Book a Free Demo →</a>
+            <a href="${BASE_URL}/book-demo" style="color:#fff;text-decoration:none;font-size:14px;font-weight:600;">Book a Free Demo →</a>
           </td>
           <td width="12"></td>
           <td style="background:#f0f0f5;border-radius:8px;text-align:center;padding:14px;">
-            <a href="https://ai-appointment-sette-vlfr5k.drytis.dev/pricing" style="color:#6C63FF;text-decoration:none;font-size:14px;font-weight:600;">View Pricing</a>
+            <a href="${BASE_URL}/pricing" style="color:#6C63FF;text-decoration:none;font-size:14px;font-weight:600;">View Pricing</a>
           </td>
         </tr>
       </table>
