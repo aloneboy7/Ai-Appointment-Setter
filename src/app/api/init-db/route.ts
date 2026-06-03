@@ -5,17 +5,20 @@ export async function GET() {
   try {
     // Users
     await query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255),
-        image_url TEXT,
-        provider VARCHAR(50) DEFAULT 'credentials',
-        provider_id VARCHAR(255),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
+CREATE TABLE IF NOT EXISTS users (
+	        id SERIAL PRIMARY KEY,
+	        name VARCHAR(255) NOT NULL,
+	        email VARCHAR(255) UNIQUE NOT NULL,
+	        password VARCHAR(255),
+	        role VARCHAR(50) DEFAULT 'user',
+	        plan VARCHAR(50) DEFAULT 'starter',
+	        email_verified BOOLEAN DEFAULT false,
+	        image_url TEXT,
+	        provider VARCHAR(50) DEFAULT 'credentials',
+	        provider_id VARCHAR(255),
+	        created_at TIMESTAMPTZ DEFAULT NOW(),
+	        updated_at TIMESTAMPTZ DEFAULT NOW()
+	      )
     `);
 
     // Leads

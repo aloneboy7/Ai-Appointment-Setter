@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import * as XLSX from "xlsx";
 import { createTransport } from "nodemailer";
 
 // GET — List campaigns
 export async function GET() {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
@@ -29,7 +30,7 @@ export async function GET() {
 // POST — Create campaign from uploaded file or manual contacts
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
@@ -207,7 +208,7 @@ export async function POST(request: Request) {
 // DELETE — Remove a campaign
 export async function DELETE(request: Request) {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const userResult = await query("SELECT id FROM users WHERE email = $1", [session.user.email]);
