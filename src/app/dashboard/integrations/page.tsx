@@ -500,7 +500,14 @@ export default function IntegrationsPage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedTemplateId) return;
+    if (!file || !selectedTemplateId) {
+      setUploadResult({ error: !selectedTemplateId ? "Select a template first" : "No file selected" });
+      return;
+    }
+    if (file.size === 0) {
+      setUploadResult({ error: "File is empty" });
+      return;
+    }
     setUploading(true);
     try {
       const formData = new FormData();
@@ -1296,14 +1303,9 @@ export default function IntegrationsPage() {
                             <div
                               className={`relative flex flex-col items-center justify-center p-8 rounded-xl border-2 border-dashed transition-all ${
                                 selectedTemplateId
-                                  ? "border-white/20 hover:border-[#6C63FF]/50 bg-white/[0.02] hover:bg-white/[0.04] cursor-pointer"
-                                  : "border-white/5 opacity-40 cursor-not-allowed"
+                                  ? "border-white/20 hover:border-[#6C63FF]/50 bg-white/[0.02] hover:bg-white/[0.04]"
+                                  : "border-white/5 opacity-40"
                               }`}
-                              onClick={() => {
-                                if (!selectedTemplateId) return;
-                                const input = document.getElementById("bulk-file-input") as HTMLInputElement;
-                                input?.click();
-                              }}
                             >
                               <Upload className="w-10 h-10 text-gray-500 mb-3" />
                               <span className="text-sm font-medium text-gray-300 mb-1">
@@ -1316,8 +1318,7 @@ export default function IntegrationsPage() {
                                 accept=".xlsx,.xls,.csv"
                                 onChange={handleFileUpload}
                                 disabled={!selectedTemplateId || uploading}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                style={{ pointerEvents: selectedTemplateId ? "auto" : "none" }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                               />
                             </div>
                           </section>
