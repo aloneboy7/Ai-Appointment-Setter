@@ -98,16 +98,17 @@ CREATE TABLE IF NOT EXISTS users (
 
     // User integrations
     await query(`
-      CREATE TABLE IF NOT EXISTS user_integrations (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        integration_key VARCHAR(100) NOT NULL,
-        status VARCHAR(50) DEFAULT 'disconnected',
-        settings JSONB DEFAULT '{}',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(user_id, integration_key)
-      )
+CREATE TABLE IF NOT EXISTS user_integrations (
+	        id SERIAL PRIMARY KEY,
+	        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+	        integration_key VARCHAR(100) NOT NULL,
+	        status VARCHAR(50) DEFAULT 'disconnected',
+	        connected_at TIMESTAMPTZ,
+	        settings JSONB DEFAULT '{}',
+	        created_at TIMESTAMPTZ DEFAULT NOW(),
+	        updated_at TIMESTAMPTZ DEFAULT NOW(),
+	        UNIQUE(user_id, integration_key)
+	      )
     `);
 
     // Email automation settings
