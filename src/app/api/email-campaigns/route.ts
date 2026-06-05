@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import * as XLSX from "xlsx";
 import { createTransport } from "nodemailer";
+import * as XLSX from "xlsx";
 
-// GET — List campaigns
+// GET — List campaigns for the current user
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -16,7 +16,7 @@ export async function GET() {
     if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const result = await query(
-      "SELECT c.*, t.name as template_name FROM email_campaigns c LEFT JOIN email_templates t ON c.template_id = t.id WHERE c.user_id = $1 ORDER BY c.created_at DESC",
+      "SELECT * FROM email_campaigns WHERE user_id = $1 ORDER BY created_at DESC",
       [userId]
     );
 
@@ -128,6 +128,16 @@ export async function POST(request: Request) {
         auth: { user: gmailSettings.sender_email, pass: gmailSettings.app_password },
       });
 
+      // Verify Gmail credentials before sending
+      try {
+        await transporter.verify();
+      } catch (verifyErr: any) {
+        await query("UPDATE email_campaigns SET status = 'failed' WHERE id = $1", [campaign_id]);
+        return NextResponse.json({
+          error: `Gmail authentication failed: ${verifyErr.message || "Invalid app password. Please reconnect Gmail with a valid App Password from https://myaccount.google.com/apppasswords"}`,
+        }, { status: 400 });
+      }
+
       let sent = 0;
       let failed = 0;
 
@@ -163,8 +173,13 @@ export async function POST(request: Request) {
           );
 
           sent++;
-        } catch (err) {
-          console.error(`Failed to send to ${contact.email}:`, err);
+        } catch (err: any) {
+          console.error(`Failed to send to ${contact.email}:`, err?.message || err);
+          // Log the failure so user can see what went wrong
+          await query(
+            `INSERT INTO email_logs (user_id, recipient, subject, body, status, provider, error) VALUES ($1, $2, $3, $4, 'failed', 'campaign', $5)`,
+            [userId, contact.email, template.subject, template.body, err?.message || String(err)]
+          );
           failed++;
         }
 
